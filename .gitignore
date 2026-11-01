@@ -6,3 +6,6 @@ _log/
 _full*.log
 watch*.log
 _exe*
+_chunk_*.part
+_dl.sh
+LANDrop-arm64.apk
