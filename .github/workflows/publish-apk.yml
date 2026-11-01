@@ -1,4 +1,4 @@
-name: Publish APK to download branch
+name: Publish APK and EXE to download branch
 
 on:
   workflow_dispatch:
@@ -19,16 +19,26 @@ jobs:
           run-id: 41287379693
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Download EXE artifact from successful build
+        uses: actions/download-artifact@v4
+        with:
+          name: landrop-exe
+          run-id: 41287379693
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: exe
+
       - name: Publish to download branch
         run: |
-          ls -la
+          ls -la; ls -la exe
           APKFILE=$(ls *.apk | head -1)
           cp "$APKFILE" LANDrop-arm64.apk
+          EXEFILE=$(ls exe/*.exe | head -1)
+          cp "$EXEFILE" LANDrop.exe
           git config user.name "GFigting"
           git config user.email "kunpeng20327@163.com"
           git checkout -q --orphan download
           git rm -rf --cached . -q || true
-          git add -f LANDrop-arm64.apk
-          git commit -q -m "APK build $(date -u '+%F %H:%M') UTC"
+          git add -f LANDrop-arm64.apk LANDrop.exe
+          git commit -q -m "APK+EXE build $(date -u '+%F %H:%M') UTC"
           git push -q -f origin download
-          echo "published LANDrop-arm64.apk to download branch"
+          echo "published LANDrop-arm64.apk + LANDrop.exe to download branch"
