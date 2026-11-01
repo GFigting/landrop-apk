@@ -2,3 +2,7 @@ bin/
 .buildozer/
 __pycache__/
 *.apk
+_log/
+_full*.log
+watch*.log
+_exe*

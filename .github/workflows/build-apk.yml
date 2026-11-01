@@ -50,6 +50,8 @@ jobs:
           pip install buildozer==1.5.0 "cython>=3.0,<3.1"
 
       - name: Build APK (debug)
+        env:
+          JAVA_HOME: /usr/lib/jvm/temurin-17-jdk-amd64
         run: |
           set -o pipefail
           buildozer android debug 2>&1 | tee build.log | tail -5
