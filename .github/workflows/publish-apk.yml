@@ -1,0 +1,32 @@
+name: Publish APK to download branch
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Download APK artifact from successful build
+        uses: actions/download-artifact@v4
+        with:
+          name: landrop-apk
+          run-id: 41287379693
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to download branch
+        run: |
+          ls -la
+          APKFILE=$(ls *.apk | head -1)
+          cp "$APKFILE" LANDrop-arm64.apk
+          git config user.name "GFigting"
+          git config user.email "kunpeng20327@163.com"
+          git checkout -q --orphan download
+          git rm -rf --cached . -q || true
+          git add -f LANDrop-arm64.apk
+          git commit -q -m "APK build $(date -u '+%F %H:%M') UTC"
+          git push -q -f origin download
+          echo "published LANDrop-arm64.apk to download branch"
