@@ -3,7 +3,7 @@ name: Publish Release
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Build APK and EXE"]
+    workflows: ["Build LAN Drop (APK + EXE)"]
     types: [completed]
     branches: [main]
 

@@ -2,9 +2,15 @@
 # -*- coding: utf-8 -*-
 """
 LAN Drop · Android 主程序 (Kivy)
-- 手机当主机: 点击启动服务, 页面显示局域网地址 + 大二维码
+- 手机当主机: 点击启动服务, 页面显示局域网地址 + 二维码
 - 其他设备(电脑/平板/电视)浏览器扫码打开即可互传
 - 服务端逻辑完全复用 lan_share.py (HTTP 中转版)
+
+移动端适配要点:
+- 所有尺寸用 dp/sp (随屏幕密度缩放, 不同手机观感一致)
+- 二维码固定正方形、居中、不超出屏幕
+- 整页可滚动, 底部留安全边距(避开手势条)
+- 多行文本绑定 text_size, 换行居中不裁切
 """
 
 import os
@@ -18,11 +24,14 @@ import lan_share
 import dlna
 
 from kivy.app import App
+from kivy.clock import Clock
 from kivy.core.text import LabelBase
+from kivy.metrics import dp
+from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
-from kivy.uix.widget import Widget
+from kivy.uix.scrollview import ScrollView
 from kivy.core.window import Window
 
 PORT = 8765
@@ -35,10 +44,19 @@ try:
 except Exception:
     pass
 
+INK = (0.12, 0.16, 0.20, 1)
 GREEN = (0.10, 0.54, 0.24, 1)
 RED = (0.64, 0.18, 0.18, 1)
 BLUE = (0.09, 0.37, 0.65, 1)
 GRAY = (0.35, 0.42, 0.50, 1)
+FAINT = (0.50, 0.55, 0.62, 1)
+
+
+def _center_label(**kw):
+    """多行居中 Label: 绑定 text_size 使 halign/valign 生效。"""
+    lbl = Label(**kw)
+    lbl.bind(size=lambda inst, v: setattr(inst, "text_size", inst.size))
+    return lbl
 
 
 def lan_ip():
@@ -89,7 +107,54 @@ def acquire_multicast_lock():
         pass
 
 
+def android_toast(text):
+    """弹 Android 原生 Toast; 失败静默(桌面环境无此能力)。"""
+    activity, _ = _android_env()
+    if not activity:
+        return False
+    try:
+        from jnius import autoclass, PythonJavaClass, java_method
+
+        class _ToastTask(PythonJavaClass):
+            __javainterfaces__ = ["java/lang/Runnable"]
+            __javacontext__ = "app"
+
+            def __init__(self, msg):
+                super(_ToastTask, self).__init__()
+                self.msg = msg
+
+            @java_method("()V")
+            def run(self):
+                Toast = autoclass("android.widget.Toast")
+                Context = autoclass("android.content.Context")
+                Toast.makeText(activity, self.msg,
+                               Toast.LENGTH_SHORT).show()
+
+        activity.runOnUiThread(_ToastTask(text))
+        return True
+    except Exception:
+        return False
+
+
+def copy_to_clipboard(text):
+    """复制文本到系统剪贴板 (Android 用 ClipboardManager)。"""
+    activity, _ = _android_env()
+    if not activity:
+        return False
+    try:
+        from jnius import autoclass
+        Context = autoclass("android.content.Context")
+        ClipData = autoclass("android.content.ClipData")
+        cm = activity.getSystemService(Context.CLIPBOARD_SERVICE)
+        cm.setPrimaryClip(ClipData.newPlainText("landrop", text))
+        return True
+    except Exception:
+        return False
+
+
 class QrWidget(Widget):
+    """二维码绘制: 单元格保持正方形, 整体在控件内居中。"""
+
     def __init__(self, **kw):
         super(QrWidget, self).__init__(**kw)
         self.matrix = None
@@ -112,18 +177,22 @@ class QrWidget(Widget):
             return
         m = self.matrix
         n = len(m)
-        cw = self.width / n
-        ch = self.height / n
+        cell = min(self.width, self.height) / n
+        total = cell * n
+        ox = self.x + (self.width - total) / 2
+        oy = self.y + (self.height - total) / 2
         with self.canvas:
             from kivy.graphics import Color, Rectangle
             Color(1, 1, 1, 1)
-            Rectangle(pos=self.pos, size=self.size)
+            Rectangle(pos=(ox - cell * 2, oy - cell * 2),
+                      size=(total + cell * 4, total + cell * 4))
             Color(0, 0, 0, 1)
             for ry, row in enumerate(m):
-                y = self.y + (n - 1 - ry) * ch
+                y = oy + (n - 1 - ry) * cell
                 for rx, v in enumerate(row):
                     if v:
-                        Rectangle(pos=(self.x + rx * cw, y), size=(cw + 0.6, ch + 0.6))
+                        Rectangle(pos=(ox + rx * cell, y),
+                                  size=(cell + 0.6, cell + 0.6))
 
 
 class DropApp(App):
@@ -132,28 +201,99 @@ class DropApp(App):
     def build(self):
         Window.clearcolor = (0.96, 0.97, 0.98, 1)
         self.server = None
-        root = BoxLayout(orientation="vertical", padding=24, spacing=12)
-        root.add_widget(Label(text="局域网文件互传", font_name="CJK", font_size="26sp",
-                              bold=True, color=(0.12, 0.16, 0.20, 1),
-                              size_hint_y=None, height=52))
-        self.status = Label(text="服务未启动", font_name="CJK", font_size="16sp",
-                            color=GRAY, size_hint_y=None, height=36)
-        root.add_widget(self.status)
-        self.url_lbl = Label(text="", font_name="CJK", font_size="20sp", bold=True,
-                             color=BLUE, size_hint_y=None, height=44)
-        root.add_widget(self.url_lbl)
-        self.qr = QrWidget(size_hint_y=1)
-        root.add_widget(self.qr)
-        self.btn = Button(text="启动服务", font_name="CJK", font_size="18sp",
-                          size_hint_y=None, height=68, background_normal="",
+        self._last_count = -1
+
+        root = ScrollView(do_scroll_x=False, bar_width=dp(3))
+        page = BoxLayout(orientation="vertical", padding=[dp(20), dp(14), dp(20), dp(24)],
+                         spacing=dp(10), size_hint_y=None)
+        page.bind(minimum_height=page.setter("height"))
+        root.add_widget(page)
+
+        # ── 标题 ──
+        page.add_widget(Label(text="局域网文件互传", font_name="CJK", font_size="24sp",
+                              bold=True, color=INK,
+                              size_hint_y=None, height=dp(44)))
+        self.status = Label(text="服务未启动", font_name="CJK", font_size="15sp",
+                            color=GRAY, size_hint_y=None, height=dp(28))
+        page.add_widget(self.status)
+
+        # ── 三步引导条 (未启动时也可见, 先教再用) ──
+        page.add_widget(_center_label(
+            text="① 连接同一 WiFi    ② 扫码 / 输网址    ③ 互传文件",
+            font_name="CJK", font_size="13sp", color=FAINT,
+            size_hint_y=None, height=dp(24)))
+
+        # ── 二维码 (正方形, 居中, 固定大小不撑爆屏幕) ──
+        qr_anchor = AnchorLayout(size_hint_y=None, height=dp(296))
+        self.qr = QrWidget(size_hint=(None, None), size=(dp(272), dp(272)))
+        qr_anchor.add_widget(self.qr)
+        page.add_widget(qr_anchor)
+
+        # ── 地址 + 复制按钮 ──
+        self.url_lbl = _center_label(text="—", font_name="CJK", font_size="18sp",
+                                     bold=True, color=BLUE,
+                                     size_hint_y=None, height=dp(32))
+        page.add_widget(self.url_lbl)
+        self.copy_btn = Button(text="复制地址", font_name="CJK", font_size="14sp",
+                               size_hint_y=None, height=dp(42),
+                               background_normal="", background_color=(0.88, 0.91, 0.95, 1),
+                               color=BLUE)
+        self.copy_btn.bind(on_press=self.copy_url)
+        page.add_widget(self.copy_btn)
+
+        # ── 主按钮 ──
+        self.btn = Button(text="启动服务", font_name="CJK", font_size="17sp",
+                          size_hint_y=None, height=dp(54), background_normal="",
                           background_color=BLUE, color=(1, 1, 1, 1))
         self.btn.bind(on_press=self.toggle)
-        root.add_widget(self.btn)
-        root.add_widget(Label(
-            text="其他设备浏览器扫码或输地址即可互传\n文件保存在应用数据目录 LANDrop 文件夹\n(电脑数据线 / 部分文件管理器可见, 也可在网页直接下载)",
-            font_name="CJK", font_size="12sp", color=(0.55, 0.60, 0.66, 1),
-            size_hint_y=None, height=64, halign="center"))
+        page.add_widget(self.btn)
+
+        # ── 收文件统计 (服务运行时实时刷新) ──
+        self.files_lbl = _center_label(text="", font_name="CJK", font_size="13sp",
+                                       color=GREEN, size_hint_y=None, height=dp(22))
+        page.add_widget(self.files_lbl)
+
+        # ── 底部说明 ──
+        page.add_widget(_center_label(
+            text="文件保存在 LANDrop 文件夹\n(数据线连电脑 / 部分文件管理器可见,\n也可在网页里直接下载)",
+            font_name="CJK", font_size="12sp", color=FAINT,
+            size_hint_y=None, height=dp(60)))
+        page.add_widget(Widget(size_hint_y=None, height=dp(16)))  # 底部安全边距
+
+        Clock.schedule_interval(self.refresh_files, 2)
         return root
+
+    # ── 交互反馈 ──
+
+    def copy_url(self, *a):
+        url = self.url_lbl.text
+        if not url or url == "—":
+            return
+        if copy_to_clipboard(url):
+            android_toast("地址已复制")
+            self.copy_btn.text = "已复制 ✓"
+            Clock.schedule_once(self._restore_copy_btn, 1.2)
+
+    def _restore_copy_btn(self, *a):
+        self.copy_btn.text = "复制地址"
+
+    def refresh_files(self, dt):
+        """每 2 秒刷新已收文件数。"""
+        if not self.server:
+            if self.files_lbl.text:
+                self.files_lbl.text = ""
+                self._last_count = -1
+            return
+        try:
+            n = len([f for f in os.listdir(lan_share.SHARED)
+                     if not f.startswith(".")])
+        except Exception:
+            return
+        if n != self._last_count:
+            self._last_count = n
+            self.files_lbl.text = "已收到 %d 个文件" % n if n else "暂未收到文件"
+
+    # ── 服务开关 ──
 
     def toggle(self, *a):
         if self.server:
@@ -179,12 +319,14 @@ class DropApp(App):
             dlna.start_discovery()
         except Exception:
             pass
+        self._last_count = -1
         self.status.text = "● 服务运行中 (中转版)"
         self.status.color = GREEN
         self.url_lbl.text = url
         self.qr.set_text(url)
         self.btn.text = "停止服务"
         self.btn.background_color = RED
+        android_toast("服务已启动, 其他设备扫码即可连接")
 
     def stop_server(self):
         try:
@@ -195,8 +337,10 @@ class DropApp(App):
         self.server = None
         self.status.text = "服务已停止"
         self.status.color = GRAY
-        self.url_lbl.text = ""
+        self.url_lbl.text = "—"
         self.qr.clear_qr()
+        self.files_lbl.text = ""
+        self._last_count = -1
         self.btn.text = "启动服务"
         self.btn.background_color = BLUE
 
