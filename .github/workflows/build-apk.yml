@@ -52,8 +52,15 @@ jobs:
       - name: Build APK (debug)
         run: |
           set -o pipefail
-          yes | buildozer android debug | tee build.log | tail -5
+          buildozer android debug 2>&1 | tee build.log | tail -5
           ls -la bin/
+
+      - name: Diagnose on failure
+        if: failure()
+        run: |
+          echo "=== disk ==="; df -h / || true
+          echo "=== memory ==="; free -h || true
+          echo "=== oom ==="; (dmesg 2>/dev/null | grep -iE "killed process|out of memory" | tail -10) || true
 
       - name: Upload build log
         if: always()
