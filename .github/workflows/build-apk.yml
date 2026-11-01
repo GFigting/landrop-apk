@@ -25,16 +25,25 @@ jobs:
       - name: Install buildozer
         run: |
           pip install --upgrade pip
-          pip install buildozer cython
+          pip install buildozer "cython>=3.0,<3.1"
 
       - name: Build APK (debug)
         run: |
-          yes | buildozer android debug 2>&1 | tail -80
+          set -o pipefail
+          yes | buildozer android debug | tee build.log | tail -5
           ls -la bin/
 
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+
       - name: Upload APK artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: landrop-apk
           path: bin/*.apk
-          if-no-files-found: error
+          if-no-files-found: ignore
