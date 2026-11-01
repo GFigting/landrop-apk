@@ -27,21 +27,15 @@ jobs:
           echo "tag=$VER" >> "$GITHUB_OUTPUT"
           echo "date=$(date +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
 
-      - name: Create Release with assets
+      - name: Create or update Release with assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
           ls -la
-          ARGS=()
-          [ -f LANDrop-arm64.apk ] && ARGS+=("LANDrop-arm64.apk#LAN Drop 安卓版 (Android 8.0+, arm64)")
-          [ -f LANDrop.exe ] && ARGS+=("LANDrop.exe#LAN Drop Windows 版 (Win10/11 64位)")
           [ -f LANDrop-arm64.apk ] && sha256sum LANDrop-arm64.apk > SHA256SUMS.txt || true
           [ -f LANDrop.exe ] && sha256sum LANDrop.exe >> SHA256SUMS.txt || true
-          ARGS+=("SHA256SUMS.txt#校验文件 SHA256SUMS")
-          gh release create "${{ steps.ver.outputs.tag }}" "${ARGS[@]}" \
-            --title "LAN Drop ${{ steps.ver.outputs.tag }}" \
-            --notes "LAN Drop 全家桶 ${{ steps.ver.outputs.date }}
+          NOTES="LAN Drop 全家桶 ${{ steps.ver.outputs.date }}
 
           ## 下载
           | 文件 | 说明 |
@@ -52,8 +46,8 @@ jobs:
 
           ## 安卓安装说明
           1. 下载 APK 直接安装（提示未知来源，允许即可）
-          2. 首次启动会请求存储权限
-          3. 其他设备连同一 WiFi，扫 App 里的二维码即可互传
+          2. 点「启动服务」→ 其他设备连同一 WiFi，扫 App 里的二维码即可互传
+          3. 支持复制地址、已收文件计数、页面可滚动
 
           ## Windows 使用
           双击运行 → 选择模式（中转版推荐）→ 自动打开浏览器显示二维码。
@@ -61,3 +55,13 @@ jobs:
           直链备用（无需进 Release 页）：
           - APK: https://gfigting.github.io/landrop-apk/LANDrop-arm64.apk
           "
+          TAG="${{ steps.ver.outputs.tag }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" LANDrop-arm64.apk LANDrop.exe SHA256SUMS.txt --clobber
+            gh release edit "$TAG" --notes "$NOTES"
+            echo "updated existing release $TAG"
+          else
+            gh release create "$TAG" LANDrop-arm64.apk LANDrop.exe SHA256SUMS.txt \
+              --title "LAN Drop $TAG" --notes "$NOTES"
+            echo "created release $TAG"
+          fi

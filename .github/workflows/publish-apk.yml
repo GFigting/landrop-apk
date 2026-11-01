@@ -12,18 +12,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download APK artifact from successful build
+      - name: Find latest successful build
+        id: run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RID=$(gh api "repos/${{ github.repository }}/actions/workflows/build-apk.yml/runs?status=success&per_page=1" -q '.workflow_runs[0].id')
+          echo "Using build run: $RID"
+          echo "run_id=$RID" >> "$GITHUB_OUTPUT"
+
+      - name: Download APK artifact from latest successful build
         uses: actions/download-artifact@v4
         with:
           name: landrop-apk
-          run-id: 41287379693
+          run-id: ${{ steps.run.outputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download EXE artifact from successful build
+      - name: Download EXE artifact from latest successful build
         uses: actions/download-artifact@v4
         with:
           name: landrop-exe
-          run-id: 41287379693
+          run-id: ${{ steps.run.outputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: exe
 
