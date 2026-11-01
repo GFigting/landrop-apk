@@ -1,0 +1,63 @@
+name: Publish Release
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Build APK and EXE"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout download branch (has published artifacts)
+        uses: actions/checkout@v4
+        with:
+          ref: download
+
+      - name: Compute version tag
+        id: ver
+        run: |
+          VER="v$(date +'%Y.%m.%d')"
+          echo "tag=$VER" >> "$GITHUB_OUTPUT"
+          echo "date=$(date +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
+
+      - name: Create Release with assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          ls -la
+          ARGS=()
+          [ -f LANDrop-arm64.apk ] && ARGS+=("LANDrop-arm64.apk#LAN Drop 安卓版 (Android 8.0+, arm64)")
+          [ -f LANDrop.exe ] && ARGS+=("LANDrop.exe#LAN Drop Windows 版 (Win10/11 64位)")
+          [ -f LANDrop-arm64.apk ] && sha256sum LANDrop-arm64.apk > SHA256SUMS.txt || true
+          [ -f LANDrop.exe ] && sha256sum LANDrop.exe >> SHA256SUMS.txt || true
+          ARGS+=("SHA256SUMS.txt#校验文件 SHA256SUMS")
+          gh release create "${{ steps.ver.outputs.tag }}" "${ARGS[@]}" \
+            --title "LAN Drop ${{ steps.ver.outputs.tag }}" \
+            --notes "LAN Drop 全家桶 ${{ steps.ver.outputs.date }}
+
+          ## 下载
+          | 文件 | 说明 |
+          |---|---|
+          | LANDrop-arm64.apk | 安卓 App：装上后点「启动服务」，屏幕显示大二维码，其他设备扫码即传 |
+          | LANDrop.exe | Windows：双击即用（托盘运行），支持中转/P2P 双模式 |
+          | SHA256SUMS.txt | 下载后可校验文件完整性 |
+
+          ## 安卓安装说明
+          1. 下载 APK 直接安装（提示未知来源，允许即可）
+          2. 首次启动会请求存储权限
+          3. 其他设备连同一 WiFi，扫 App 里的二维码即可互传
+
+          ## Windows 使用
+          双击运行 → 选择模式（中转版推荐）→ 自动打开浏览器显示二维码。
+
+          直链备用（无需进 Release 页）：
+          - APK: https://gfigting.github.io/landrop-apk/LANDrop-arm64.apk
+          "
