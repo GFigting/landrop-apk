@@ -27,6 +27,7 @@ import urllib.parse
 import hmac
 import sys
 import webbrowser
+import updater
 
 PORT = 8766
 # 打包成 exe 后, qrcode.min.js 在 PyInstaller 解压资源目录(_MEIPASS)里
@@ -437,8 +438,18 @@ def _run_tray(httpd, local_url, lan_url):
         threading.Thread(target=httpd.shutdown, daemon=True).start()
         icon.stop()
 
+    def on_download(icon, item):
+        import webbrowser
+        r = latest.get("remote") or {}
+        url = r.get("download_page") or "https://github.com/GFigting/landrop-apk/releases"
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+
     menu = pystray.Menu(
         pystray.MenuItem("打开互传页面", on_open, default=True),
+        pystray.MenuItem("下载新版本", on_download),
         pystray.MenuItem("退出", on_quit),
     )
     icon = pystray.Icon(
@@ -447,6 +458,27 @@ def _run_tray(httpd, local_url, lan_url):
         menu)
     try:
         icon.notify("已启动: %s" % local_url)
+    except Exception:
+        pass
+
+    # 后台检查更新: 发现新版本弹气泡提示, 点击菜单「下载新版本」前往
+    latest = {"remote": None}
+    _app_dir = os.path.dirname(os.path.abspath(sys.executable)) \
+        if getattr(sys, "frozen", False) else BASE_DIR
+
+    def _on_update(remote):
+        if not remote:
+            return
+        latest["remote"] = remote
+        try:
+            msg = "LAN Drop 新版本 v%s，右键菜单下载" % remote.get("version", "")
+            msg = msg if len(msg) <= 60 else msg[:59] + "…"
+            icon.notify(msg)
+        except Exception:
+            pass
+
+    try:
+        updater.check_async(_on_update, _app_dir)
     except Exception:
         pass
     icon.run()

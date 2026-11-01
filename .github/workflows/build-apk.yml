@@ -16,6 +16,13 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Inject version into updater.py (EXE)
+        shell: bash
+        run: |
+          VER="v$(date +'%Y.%m.%d')"
+          sed -i "s/^CURRENT_VERSION = .*/CURRENT_VERSION = \"${VER#v}\"/" updater.py
+          grep -n "CURRENT_VERSION" updater.py
+
       - name: Build Windows exe
         run: |
           pip install pyinstaller
@@ -48,6 +55,12 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install buildozer==1.5.0 "cython>=3.0,<3.1"
+
+      - name: Inject version into apk/updater.py
+        run: |
+          VER="v$(date +'%Y.%m.%d')"
+          sed -i "s/^CURRENT_VERSION = .*/CURRENT_VERSION = \"${VER#v}\"/" apk/updater.py
+          grep -n "CURRENT_VERSION" apk/updater.py
 
       - name: Build APK (debug)
         env:

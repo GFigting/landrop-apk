@@ -43,11 +43,24 @@ jobs:
           cp "$APKFILE" LANDrop-arm64.apk
           EXEFILE=$(ls exe/*.exe | head -1)
           cp "$EXEFILE" LANDrop.exe
+          VER="v$(date +'%Y.%m.%d')"
+          BARE="${VER#v}"
+          cat > version.json <<EOF
+          {
+            "version": "$BARE",
+            "tag": "$VER",
+            "date": "$(date +'%Y-%m-%d')",
+            "notes": "LAN Drop $VER",
+            "download_page": "https://github.com/GFigting/landrop-apk/releases/tag/$VER",
+            "apk_url": "https://gfigting.github.io/landrop-apk/LANDrop-arm64.apk",
+            "exe_url": "https://gfigting.github.io/landrop-apk/LANDrop.exe"
+          }
+          EOF
           git config user.name "GFigting"
           git config user.email "kunpeng20327@163.com"
           git checkout -q --orphan download
           git rm -rf --cached . -q || true
-          git add -f LANDrop-arm64.apk LANDrop.exe
-          git commit -q -m "APK+EXE build $(date -u '+%F %H:%M') UTC"
+          git add -f LANDrop-arm64.apk LANDrop.exe version.json
+          git commit -q -m "APK+EXE build $VER $(date -u '+%F %H:%M') UTC"
           git push -q -f origin download
-          echo "published LANDrop-arm64.apk + LANDrop.exe to download branch"
+          echo "published LANDrop-arm64.apk + LANDrop.exe + version.json to download branch"

@@ -22,6 +22,7 @@ import qrcode
 
 import lan_share
 import dlna
+import updater
 
 from kivy.app import App
 from kivy.clock import Clock
@@ -209,6 +210,42 @@ class DropApp(App):
         page.bind(minimum_height=page.setter("height"))
         root.add_widget(page)
 
+        # ── 更新通知横幅 (默认隐藏, 检查发现新版本时显示) ──
+        from kivy.graphics import Color, Rectangle
+        self._remote = None
+        self.update_bar = BoxLayout(orientation="horizontal", size_hint_y=None,
+                                    height=0, opacity=0, padding=[dp(12), dp(6)],
+                                    spacing=dp(10))
+        self.update_bar.canvas.before.add(Color(0.09, 0.37, 0.65, 1))
+        self.update_bar.canvas.before.add(Rectangle(
+            pos=self.update_bar.pos, size=self.update_bar.size))
+        self.update_bar.bind(
+            pos=lambda i, v: setattr(i.canvas.before.children[-1], "pos", v),
+            size=lambda i, v: setattr(i.canvas.before.children[-1], "size", v))
+        self.update_lbl = _center_label(text="", font_name="CJK", font_size="13sp",
+                                        color=(1, 1, 1, 1), size_hint=(1, None),
+                                        height=dp(36))
+        self.update_bar.add_widget(self.update_lbl)
+        btn_dl = Button(text="下载", font_name="CJK", font_size="13sp",
+                        size_hint=(None, None), size=(dp(64), dp(36)),
+                        background_normal="", background_color=(1, 1, 1, 1),
+                        color=(0.09, 0.37, 0.65, 1))
+        btn_dl.bind(on_press=self.open_update)
+        self.update_bar.add_widget(btn_dl)
+        btn_x = Button(text="✕", font_name="CJK", font_size="14sp",
+                       size_hint=(None, None), size=(dp(36), dp(36)),
+                       background_normal="", background_color=(0, 0, 0, 0),
+                       color=(1, 1, 1, 1))
+        btn_x.bind(on_press=self.hide_update)
+        self.update_bar.add_widget(btn_x)
+        page.add_widget(self.update_bar)
+
+        # 启动后后台检查更新 (仅通知 + 一键下载, 不自动安装)
+        try:
+            updater.check_async(self._on_update_check, BASE)
+        except Exception:
+            pass
+
         # ── 标题 ──
         page.add_widget(Label(text="局域网文件互传", font_name="CJK", font_size="24sp",
                               bold=True, color=INK,
@@ -276,6 +313,48 @@ class DropApp(App):
 
     def _restore_copy_btn(self, *a):
         self.copy_btn.text = "复制地址"
+
+    # ── 更新通知 ──
+
+    def _on_update_check(self, remote):
+        """后台线程回调, 切回主线程刷新 UI。"""
+        Clock.schedule_once(lambda dt: self.show_update(remote), 0)
+
+    def show_update(self, remote):
+        if not remote:
+            return
+        self._remote = remote
+        self.update_lbl.text = "发现新版本 v%s" % remote.get("version", "")
+        self.update_bar.height = dp(48)
+        self.update_bar.opacity = 1
+
+    def hide_update(self, *a):
+        self.update_bar.height = 0
+        self.update_bar.opacity = 0
+
+    def open_update(self, *a):
+        url = (self._remote or {}).get("download_page") or \
+              "https://github.com/GFigting/landrop-apk/releases"
+        self._open_url(url)
+
+    def _open_url(self, url):
+        """优先用 Android 系统浏览器打开; 桌面环境回退 webbrowser。"""
+        activity, _ = _android_env()
+        if activity:
+            try:
+                from jnius import autoclass
+                Intent = autoclass("android.content.Intent")
+                Uri = autoclass("android.net.Uri")
+                intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                activity.startActivity(intent)
+                return
+            except Exception:
+                pass
+        import webbrowser
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
 
     def refresh_files(self, dt):
         """每 2 秒刷新已收文件数。"""

@@ -23,7 +23,11 @@ jobs:
       - name: Compute version tag
         id: ver
         run: |
-          VER="v$(date +'%Y.%m.%d')"
+          if [ -f version.json ]; then
+            VER="v$(python3 -c "import json;print(json.load(open('version.json'))['version'])")"
+          else
+            VER="v$(date +'%Y.%m.%d')"
+          fi
           echo "tag=$VER" >> "$GITHUB_OUTPUT"
           echo "date=$(date +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
 
