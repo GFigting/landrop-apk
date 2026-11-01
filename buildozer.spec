@@ -12,6 +12,7 @@ android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,CHANGE_WIF
 android.archs = arm64-v8a, armeabi-v7a
 android.accept_sdk_license = True
 android.allow_backup = True
+p4a.branch = 2024.1.21
 log_level = 2
 
 [buildozer]
